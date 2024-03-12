@@ -1,7 +1,10 @@
 // This is a port of the original mcigraph library (originally developed by Sebastian Stabinger)
 // to raylib 5.0 in order to get away from SDL2 as a backend for all of the rendering and to make extending this library easier for motivated students
 // For example it now allows directly rendering text using ttf fonts, drawing circles, etc.
-// 2023-12-22 - Matthias Panny
+
+// Changelog --> for details see the git history
+// 2023-12-22 - Matthias Panny - created initial version
+// 2024-03-12 - Matthias Panny - added fullscreen options
 
 #ifndef MCIGRAPH_H
 #define MCIGRAPH_H
@@ -19,9 +22,8 @@ namespace mcigraph{
 
 struct MciGraphException {
   std::string message;
-  MciGraphException(std::string m) {
+  MciGraphException(std::string m) : message(m){
     std::cout << "MciGraphException: " << m << std::endl;
-    message = m;
   }
 };
 
@@ -156,6 +158,18 @@ public:
         SetTargetFPS(fps);
     }
 
+    void set_fullscreen(){
+        if(!IsWindowFullscreen()) ToggleFullscreen();
+    }
+
+    void unset_fullscreen(){
+        if(IsWindowFullscreen()) ToggleFullscreen();
+    }
+
+    void toggle_fullscreen(){
+        ToggleFullscreen();
+    }
+
     int get_screen_width(){
         return GetScreenWidth();
     }
@@ -245,6 +259,18 @@ inline double get_delta_time(){
 
 inline void set_fps(int fps){
     return mcigraph::MciGraph::get_instance().set_fps(fps);
+}
+
+inline void set_fullscreen(){
+    return mcigraph::MciGraph::get_instance().set_fullscreen();
+}
+
+inline void unset_fullscreen(){
+    return mcigraph::MciGraph::get_instance().unset_fullscreen();
+}
+
+inline void toggle_fullscreen(){
+    return mcigraph::MciGraph::get_instance().toggle_fullscreen();
 }
 
 inline int get_screen_width(){
