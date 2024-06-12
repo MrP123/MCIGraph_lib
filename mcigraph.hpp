@@ -5,6 +5,7 @@
 // Changelog --> for details see the git history
 // 2023-12-22 - Matthias Panny - created initial version
 // 2024-03-12 - Matthias Panny - added fullscreen options
+// 2024-06-12 - Matthias Panny - fixed bug with image rotation
 
 #ifndef MCIGRAPH_H
 #define MCIGRAPH_H
@@ -136,9 +137,9 @@ public:
         DrawText(text, x, y, fontSize, CLITERAL(Color){ (unsigned char)red, (unsigned char)green, (unsigned char)blue, 255 });
     }
 
-    void draw_image(std::string filename, int x, int y, float scale = 1.0f){
+    void draw_image(std::string filename, int x, int y, float scale = 1.0f, float rot_deg = 0.0f){
         Texture2D texture = _textureCache.load(filename);
-        DrawTextureEx(texture, CLITERAL(Vector2){(float)x, (float)y}, 1.0f, scale, WHITE);
+        DrawTextureEx(texture, CLITERAL(Vector2){(float)x, (float)y}, rot_deg, scale, WHITE);
     }
 
     bool is_pressed(int key){
@@ -241,8 +242,8 @@ inline void draw_text(std::string text, int x, int y, int fontSize = 18, int red
     return mcigraph::MciGraph::get_instance().draw_text(text.c_str(), x, y, fontSize, red, green, blue);
 }
 
-inline void draw_image(std::string filename, int x, int y, float scale=1.0f){
-    return mcigraph::MciGraph::get_instance().draw_image(filename, x, y, scale);
+inline void draw_image(std::string filename, int x, int y, float scale = 1.0f, float rot_deg = 0.0f){
+    return mcigraph::MciGraph::get_instance().draw_image(filename, x, y, scale, rot_deg);
 }
 
 inline bool is_pressed(int key){
