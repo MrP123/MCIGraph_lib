@@ -7,6 +7,7 @@
 // 2024-03-12 - Matthias Panny - added fullscreen options
 // 2024-06-12 - Matthias Panny - fixed bug with image rotation
 // 2025-02-11 - Matthias Panny - reworked MciGraphException to inherit from std::runtime_error as an example for exceptions
+// 2025-02-11 - Matthias Panny - Changed library to render into a render texture that is drawn at the window scale. This allows better borderless windowed fullscreen support. There is some caveats regarding mouse support.
 
 #ifndef MCIGRAPH_H
 #define MCIGRAPH_H
@@ -85,15 +86,24 @@ class MciGraph{
 private:
     TextureCache _textureCache;
 
+    RenderTexture2D _target;
+    int _gameScreenWidth = 1280;
+    int _gameScreenHeight = 720;
+    float _scale = 1.0f;
+    bool _isBorderlessFullscreen = false;
+
 private:
     MciGraph(){
-        InitWindow(1280, 720, "mcigraph");
+        InitWindow(_gameScreenWidth, _gameScreenHeight, "mcigraph");
         SetTargetFPS(60);
         //SetExitKey(KEY_NULL); //uncomment if you want to disable closing the application via the escape key
 
         if (!_textureCache.SearchAndSetResourceDir("tiles"))
             throw MciGraphException("Could not find the \"tiles\" folder");
         TraceLog(LOG_INFO, "Using working/resource dir %s", GetWorkingDirectory());
+
+        _target = LoadRenderTexture(_gameScreenWidth, _gameScreenHeight);
+        SetTextureFilter(_target.texture, TEXTURE_FILTER_ANISOTROPIC_4X);  // Texture scale filter to use
     }
 
 public:
@@ -106,11 +116,51 @@ public:
     }
 
     void begin_drawing(){
-        BeginDrawing();
-        clear();
+        //Check if window has rescaled this frame --> could also be chandled in the toggle_fullscreen() method
+        float wScale = (float)GetScreenWidth()  / _gameScreenWidth;
+        float hScale = (float)GetScreenHeight() / _gameScreenHeight;
+
+        float new_scale = (wScale < hScale) ? wScale : hScale;
+        if(_scale != new_scale){
+            _scale = new_scale;
+            SetMouseOffset(-(GetScreenWidth() - (_gameScreenWidth*_scale))*0.5f, -(GetScreenHeight() - (_gameScreenHeight*_scale))*0.5f);
+            SetMouseScale(1/_scale, 1/_scale);
+        }
+
+        //If it is undesirable that GetMousePosition delivers negative values with wSacle & hScale are not equal, then a virtual mouse pointer can be implemented
+        //This requires a (private) member variable _virtualMouse of type Vector2 to be defined in the MciGraph class.
+        //If both the normal and virtual mouse pointer are used it is required that the offset and scale are set to 0 and 1 respectively before the vitual mouse is initialized with the normal one.
+        //This must be done each frame, not only when the scale changes!
+        //SetMouseOffset(0, 0);
+        //SetMouseScale(1.0f, 1.0f);
+        //Vector2 mouse = GetMousePosition();
+        //_virtualMouse.x = (mouse.x - (GetScreenWidth()  - (_gameScreenWidth  * _scale)) * 0.5f) / _scale;
+        //_virtualMouse.y = (mouse.y - (GetScreenHeight() - (_gameScreenHeight * _scale)) * 0.5f) / _scale;
+        //_virtualMouse = Vector2Clamp(_virtualMouse, (Vector2){ 0, 0 }, (Vector2){ (float)_gameScreenWidth, (float)_gameScreenHeight });
+
+        //Begin drawing on the render texture --> will only be drawn to screen after end_drawing()
+        BeginTextureMode(_target);
+        clear(); //clear render texture
     }
 
     void end_drawing(){
+        //Ends the drawing to the render texture
+        EndTextureMode();
+
+        //and actually draws it
+        BeginDrawing();
+            clear(); //clear screen
+            DrawTexturePro(
+                _target.texture,
+                (Rectangle){ 0.0f, 0.0f, (float)_target.texture.width, (float)-_target.texture.height },
+                (Rectangle){
+                    (GetScreenWidth()  - ((float)_gameScreenWidth  * _scale)) * 0.5f,
+                    (GetScreenHeight() - ((float)_gameScreenHeight * _scale)) * 0.5f,
+                    (float)_gameScreenWidth  * _scale,
+                    (float)_gameScreenHeight * _scale
+                },
+                (Vector2){ 0, 0 }, 0.0f, WHITE
+            );
         EndDrawing();
     }
 
@@ -136,9 +186,9 @@ public:
         DrawText(text, x, y, fontSize, CLITERAL(Color){ (unsigned char)red, (unsigned char)green, (unsigned char)blue, 255 });
     }
 
-    void draw_image(std::string filename, int x, int y, float scale = 1.0f, float rot_deg = 0.0f){
+    void draw_image(std::string filename, int x, int y, float _scale = 1.0f, float rot_deg = 0.0f){
         Texture2D texture = _textureCache.load(filename);
-        DrawTextureEx(texture, CLITERAL(Vector2){(float)x, (float)y}, rot_deg, scale, WHITE);
+        DrawTextureEx(texture, CLITERAL(Vector2){(float)x, (float)y}, rot_deg, _scale, WHITE);
     }
 
     bool is_pressed(int key){
@@ -159,26 +209,35 @@ public:
     }
 
     void set_fullscreen(){
-        if(!IsWindowFullscreen()) ToggleFullscreen();
+        if(!_isBorderlessFullscreen) toggle_fullscreen();
     }
 
     void unset_fullscreen(){
-        if(IsWindowFullscreen()) ToggleFullscreen();
+        if(_isBorderlessFullscreen) toggle_fullscreen();
     }
 
     void toggle_fullscreen(){
-        ToggleFullscreen();
+        _isBorderlessFullscreen = !_isBorderlessFullscreen;
+        ToggleBorderlessWindowed();
+    }
+
+    bool is_fullscreen(){
+        //borderless windowed fullscreen is not the same as "real" fullscreen --> custom member of MciGraph class is used to keep track of this
+        return _isBorderlessFullscreen;
     }
 
     int get_screen_width(){
-        return GetScreenWidth();
+        return _gameScreenWidth;
+        //return GetScreenWidth();
     }
 
     int get_screen_height(){
-        return GetScreenHeight();
+        return _gameScreenHeight;
+        //return GetScreenHeight();
     }
 
     ~MciGraph(){
+        UnloadRenderTexture(_target);
         CloseWindow();
     }
 
@@ -271,6 +330,10 @@ inline void unset_fullscreen(){
 
 inline void toggle_fullscreen(){
     return mcigraph::MciGraph::get_instance().toggle_fullscreen();
+}
+
+inline bool is_fullscreen(){
+    return mcigraph::MciGraph::get_instance().is_fullscreen();
 }
 
 inline int get_screen_width(){
