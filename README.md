@@ -1,11 +1,3 @@
----
-marp: true
-paginate: true
-headingDivider: 2
-theme: solarized
-class: lead
----
-
 # MCIGraph Library
 
 The minimalistic graphics library used in the programming 2 course at MCI. The actual library itself is just the `mcigraph.hpp` file which is a header only library for ease of use.
