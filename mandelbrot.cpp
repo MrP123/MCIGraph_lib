@@ -25,6 +25,7 @@ void color_to_rgb(unsigned int color, unsigned int* r, unsigned int* g, unsigned
 int main() {
     while (running()) {
         begin_drawing();
+
         // Calculate Mandelbrot
         for (int y = 0; y < get_screen_height(); y++) {
             for (int x = 0; x < get_screen_width(); x++) {
@@ -40,8 +41,14 @@ int main() {
                 draw_point(x, y, r, g, b);
             }
         }
+
+        // Print frames per second in upper left corner
+        double fps = 1.0 / get_delta_time();
+        char buffer[9+1];
+        sprintf(buffer, "FPS: %04.1f", fps);
+        draw_text(buffer, 10, 10, 32, 0xff, 0xff, 0xff);
+
         end_drawing();
     }
     return 0;
 }
-
