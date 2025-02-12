@@ -13,4 +13,4 @@ The archive contains the original `*.bmp`-images with a magenta background to sh
 ![](tiles.png)
 
 ## History
-MCIGraph was originally created with SDL2 as a backend, though this has made it fairly difficult for many students to adapt to their needs.
+MCIGraph was originally created with SDL2 as a backend, though this has made it fairly difficult for many students to adapt to their needs. The usage of raylib was an improvement with that regard.
