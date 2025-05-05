@@ -24,6 +24,8 @@ void color_to_rgb(unsigned int color, unsigned int* r, unsigned int* g, unsigned
 
 int main() {
     while (running()) {
+        if(is_pressed(KEY_SPACE)) toggle_fullscreen();
+        
         begin_drawing();
 
         // Calculate Mandelbrot
