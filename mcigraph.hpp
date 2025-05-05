@@ -7,9 +7,14 @@
 // 2024-03-12 - Matthias Panny - added fullscreen options
 // 2024-06-12 - Matthias Panny - fixed bug with image rotation
 // 2025-02-11 - Matthias Panny - reworked MciGraphException to inherit from std::runtime_error as an example for exceptions
+// 2025-02-11 - Matthias Panny - Changed library to render into a render texture that is drawn at the window scale. This allows better borderless windowed fullscreen support. There is some caveats regarding mouse support.
+// 2025-05-05 - Matthias Panny - Made borderless windowed fullscreen the default, with define to change the behavior back to normal fullscreen
 
 #ifndef MCIGRAPH_H
 #define MCIGRAPH_H
+
+//If the fullscreen behavior (borderless windowed) causes issues, the normal fullscreen mechanism can be enabled by uncommenting the line below
+//#define NORMAL_FULLSCREEN
 
 // Warning: Putting everything in the header file is not good style.
 // This is done here for ease of use for educational purposes only!!
@@ -85,15 +90,26 @@ class MciGraph{
 private:
     TextureCache _textureCache;
 
+    //only needed if NORMAL_FULLSCREEN is not defined
+    //if NORMAL_FULLSCREEN is defined, these variables are unused but do not change the behavior or worsen performance
+    RenderTexture2D _target;
+    int _gameScreenWidth = 1280;
+    int _gameScreenHeight = 720;
+    float _scale = 1.0f;
+    bool _isBorderlessFullscreen = false;
+
 private:
     MciGraph(){
-        InitWindow(1280, 720, "mcigraph");
+        InitWindow(_gameScreenWidth, _gameScreenHeight, "mcigraph");
         SetTargetFPS(60);
         //SetExitKey(KEY_NULL); //uncomment if you want to disable closing the application via the escape key
 
         if (!_textureCache.SearchAndSetResourceDir("tiles"))
             throw MciGraphException("Could not find the \"tiles\" folder");
         TraceLog(LOG_INFO, "Using working/resource dir %s", GetWorkingDirectory());
+
+        _target = LoadRenderTexture(_gameScreenWidth, _gameScreenHeight);
+        SetTextureFilter(_target.texture, TEXTURE_FILTER_ANISOTROPIC_4X);  // Texture scale filter to use
     }
 
 public:
@@ -106,11 +122,54 @@ public:
     }
 
     void begin_drawing(){
-        BeginDrawing();
+
+        #ifdef NORMAL_FULLSCREEN
+            BeginDrawing();
+        #else
+            float wScale = (float)GetScreenWidth()  / _gameScreenWidth;
+            float hScale = (float)GetScreenHeight() / _gameScreenHeight;
+
+            float new_scale = (wScale < hScale) ? wScale : hScale;
+            if(_scale != new_scale){
+                _scale = new_scale;
+                SetMouseOffset(-(GetScreenWidth() - (_gameScreenWidth*_scale))*0.5f, -(GetScreenHeight() - (_gameScreenHeight*_scale))*0.5f);
+                SetMouseScale(1/_scale, 1/_scale);
+            }
+
+            //SetMouseOffset(0, 0);
+            //SetMouseScale(1.0f, 1.0f);
+            //Vector2 mouse = GetMousePosition();
+            //_virtualMouse.x = (mouse.x - (GetScreenWidth()  - (_gameScreenWidth  * _scale)) * 0.5f) / _scale;
+            //_virtualMouse.y = (mouse.y - (GetScreenHeight() - (_gameScreenHeight * _scale)) * 0.5f) / _scale;
+            //_virtualMouse = Vector2Clamp(_virtualMouse, (Vector2){ 0, 0 }, (Vector2){ (float)_gameScreenWidth, (float)_gameScreenHeight });
+
+            BeginTextureMode(_target);
+        #endif
+
         clear();
     }
 
     void end_drawing(){
+
+        #ifndef NORMAL_FULLSCREEN
+            //Ends the drawing to the render texture
+            EndTextureMode();
+
+            //and actually draws it
+            BeginDrawing();
+                clear();
+                DrawTexturePro(
+                    _target.texture,
+                    (Rectangle){ 0.0f, 0.0f, (float)_target.texture.width, (float)-_target.texture.height },
+                    (Rectangle){
+                        (GetScreenWidth()  - ((float)_gameScreenWidth  * _scale))*0.5f,
+                        (GetScreenHeight() - ((float)_gameScreenHeight * _scale))*0.5f,
+                        (float)_gameScreenWidth  * _scale,
+                        (float)_gameScreenHeight * _scale
+                    },
+                    (Vector2){ 0, 0 }, 0.0f, WHITE
+                );
+        #endif
         EndDrawing();
     }
 
@@ -159,26 +218,56 @@ public:
     }
 
     void set_fullscreen(){
-        if(!IsWindowFullscreen()) ToggleFullscreen();
+        #ifdef NORMAL_FULLSCREEN
+            if(!IsWindowFullscreen()) ToggleFullscreen();
+        #else
+            if(!_isBorderlessFullscreen) toggle_fullscreen();
+        #endif
     }
 
     void unset_fullscreen(){
-        if(IsWindowFullscreen()) ToggleFullscreen();
+        #ifdef NORMAL_FULLSCREEN
+            if(IsWindowFullscreen()) ToggleFullscreen();
+        #else
+            if(_isBorderlessFullscreen) toggle_fullscreen();
+        #endif
     }
 
     void toggle_fullscreen(){
-        ToggleFullscreen();
+        #ifdef NORMAL_FULLSCREEN
+            ToggleFullscreen();
+        #else
+            _isBorderlessFullscreen = !_isBorderlessFullscreen;
+            ToggleBorderlessWindowed();
+        #endif
+    }
+
+    bool is_fullscreen(){
+        #ifdef NORMAL_FULLSCREEN
+            return IsWindowFullscreen();
+        #else
+            return _isBorderlessFullscreen;
+        #endif
     }
 
     int get_screen_width(){
-        return GetScreenWidth();
+        #ifdef NORMAL_FULLSCREEN
+            return GetScreenWidth();
+        #else
+            return _gameScreenWidth;
+        #endif
     }
 
     int get_screen_height(){
-        return GetScreenHeight();
+        #ifdef NORMAL_FULLSCREEN
+            return GetScreenHeight();
+        #else
+            return _gameScreenHeight;
+        #endif
     }
 
     ~MciGraph(){
+        UnloadRenderTexture(_target);
         CloseWindow();
     }
 
@@ -271,6 +360,10 @@ inline void unset_fullscreen(){
 
 inline void toggle_fullscreen(){
     return mcigraph::MciGraph::get_instance().toggle_fullscreen();
+}
+
+inline bool is_fullscreen(){
+    return mcigraph::MciGraph::get_instance().is_fullscreen();
 }
 
 inline int get_screen_width(){
