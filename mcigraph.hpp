@@ -9,6 +9,7 @@
 // 2025-02-11 - Matthias Panny - reworked MciGraphException to inherit from std::runtime_error as an example for exceptions
 // 2025-02-11 - Matthias Panny - Changed library to render into a render texture that is drawn at the window scale. This allows better borderless windowed fullscreen support. There is some caveats regarding mouse support.
 // 2025-05-05 - Matthias Panny - Made borderless windowed fullscreen the default, with define to change the behavior back to normal fullscreen
+// 2026-08-19 - Matthias Panny - Added an additional render texture _stagingTex to draw rgba buffers (draw_pixels_rgba(...)) to the screen
 
 #ifndef MCIGRAPH_H
 #define MCIGRAPH_H
@@ -29,7 +30,10 @@
 namespace mcigraph{
 
 struct MciGraphException : std::runtime_error {
-    MciGraphException(const std::string& m) : std::runtime_error(m){};
+    MciGraphException(const std::string& m) : std::runtime_error(m){
+        std::string msg = "MciGraphException: " + m;
+        TraceLog(LOG_ERROR, "%s", msg.c_str());
+    };
 };
 
 class TextureCache{
@@ -98,6 +102,9 @@ private:
     float _scale = 1.0f;
     bool _isBorderlessFullscreen = false;
 
+    // Texture that can be used to immediately draw a rgba buffer to the screen
+    Texture2D _stagingTex = {0};
+
 private:
     MciGraph(){
         InitWindow(_gameScreenWidth, _gameScreenHeight, "mcigraph");
@@ -106,10 +113,15 @@ private:
 
         if (!_textureCache.SearchAndSetResourceDir("tiles"))
             throw MciGraphException("Could not find the \"tiles\" folder");
+
         TraceLog(LOG_INFO, "Using working/resource dir %s", GetWorkingDirectory());
 
         _target = LoadRenderTexture(_gameScreenWidth, _gameScreenHeight);
         SetTextureFilter(_target.texture, TEXTURE_FILTER_ANISOTROPIC_4X);  // Texture scale filter to use
+
+        Image img = GenImageColor(_gameScreenWidth, _gameScreenHeight, BLANK);
+        _stagingTex = LoadTextureFromImage(img);
+        UnloadImage(img);
     }
 
 public:
@@ -195,9 +207,20 @@ public:
         DrawText(text, x, y, fontSize, CLITERAL(Color){ (unsigned char)red, (unsigned char)green, (unsigned char)blue, 255 });
     }
 
-    void draw_image(std::string filename, int x, int y, float scale = 1.0f, float rot_deg = 0.0f){
+    void draw_image(std::string filename, int x, int y, float _scale = 1.0f, float rot_deg = 0.0f){
         Texture2D texture = _textureCache.load(filename);
-        DrawTextureEx(texture, CLITERAL(Vector2){(float)x, (float)y}, rot_deg, scale, WHITE);
+        DrawTextureEx(texture, CLITERAL(Vector2){(float)x, (float)y}, rot_deg, _scale, WHITE);
+    }
+
+    void draw_pixels_rgba(const unsigned char* rgba, int width, int height) {
+        if (width != _gameScreenWidth || height != _gameScreenHeight) {
+            throw MciGraphException("draw_pixels_rgba: size mismatch to internal render size");
+        }
+        // Upload CPU buffer to GPU texture
+        UpdateTexture(_stagingTex, rgba);
+
+        // Draw the texture to the current render target at 0, 0, as the size must match the render target size
+        DrawTexture(_stagingTex, 0, 0, WHITE);
     }
 
     bool is_pressed(int key){
@@ -268,6 +291,7 @@ public:
 
     ~MciGraph(){
         UnloadRenderTexture(_target);
+        if (_stagingTex.id != 0) UnloadTexture(_stagingTex);
         CloseWindow();
     }
 
@@ -332,6 +356,10 @@ inline void draw_text(std::string text, int x, int y, int fontSize = 18, int red
 
 inline void draw_image(std::string filename, int x, int y, float scale = 1.0f, float rot_deg = 0.0f){
     return mcigraph::MciGraph::get_instance().draw_image(filename, x, y, scale, rot_deg);
+}
+
+inline void draw_pixels_rgba(const unsigned char* rgba, int width, int height) {
+    return mcigraph::MciGraph::get_instance().draw_pixels_rgba(rgba, width, height);
 }
 
 inline bool is_pressed(int key){

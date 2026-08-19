@@ -1,2 +1,6 @@
 templates/*
 !templates/.gitkeep
+
+include/
+lib/
+web/libraylib.a
