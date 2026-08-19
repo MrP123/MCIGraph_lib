@@ -4,7 +4,11 @@ The minimalistic graphics library used in the **Programming 2** course at MCI. T
 As the underlying graphics library is raylib, it is cross-platform with support for Linux, MacOS and Windows. Web support is available through emscripten, though has not been tested with the MCIGraph library.
 
 ## How to use
-An example of how to use it can be seen in `mandelbrot.cpp`. The folder `templates` contains a pre-made project for Code::Blocks.
+An example of how to use it can be seen in `mandelbrot.cpp`. You can compile it with the following command:
+
+```bash
+g++ -o .\mandelbrot.exe .\mandelbrot.cpp -Wall -std=c++17 -O3 -I ./thirdparty/raylib-5.0/src -L ./thirdparty/raylib-5.0/src -lraylib -lgdi32 -lwinmm -lopengl32 -lpthread
+```
 
 ## Tiles
 This MCIGraph is setup to be used for creating tile based games. A tileset that can be used for creating games can be found in the `tiles` folder and `tiles_orig.zip` archive.
