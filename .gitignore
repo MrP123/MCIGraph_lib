@@ -6,3 +6,4 @@ web/libraylib.a
 mandelbrot.exe
 
 bin/
+build/
