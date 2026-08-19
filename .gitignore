@@ -4,3 +4,5 @@ templates/*
 web/libraylib.a
 
 mandelbrot.exe
+
+bin/
