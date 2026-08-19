@@ -1,8 +1,6 @@
 templates/*
 !templates/.gitkeep
 
-web/libraylib.a
-
 mandelbrot.exe
 
 bin/
