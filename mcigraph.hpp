@@ -75,9 +75,11 @@ public:
             return true;
         }
 
-        //check 3 levels up from the application dir
-        const char* search_paths[] = {"%s../%s", "%s../../%s", "%s../../../%s"};
-        for(int i = 0; i < 3; i++){
+        //check 3 levels up from the application dir & the canonical folder structure when cloning MCIGraph_lib
+        const char* search_paths[] = {"%s../%s", "%s../../%s", "%s../../../%s", "%s/MCIGraph_lib/%s"};
+        const int amt_paths = sizeof(search_paths) / sizeof(*search_paths);
+
+        for(int i = 0; i < amt_paths; i++){
             dir = TextFormat(search_paths[i], appDir, folderName);
             if (DirectoryExists(dir)){
                 ChangeDirectory(dir);
