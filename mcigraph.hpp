@@ -79,7 +79,7 @@ public:
         const char* search_paths[] = {"%s../%s", "%s../../%s", "%s../../../%s", "%s/MCIGraph_lib/%s"};
         const int amt_paths = sizeof(search_paths) / sizeof(*search_paths);
 
-        for(int i = 0; i < amt_paths; i++){
+        for (int i = 0; i < amt_paths; i++){
             dir = TextFormat(search_paths[i], appDir, folderName);
             if (DirectoryExists(dir)){
                 ChangeDirectory(dir);
