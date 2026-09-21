@@ -10,12 +10,16 @@
 // 2025-02-11 - Matthias Panny - Changed library to render into a render texture that is drawn at the window scale. This allows better borderless windowed fullscreen support. There is some caveats regarding mouse support.
 // 2025-05-05 - Matthias Panny - Made borderless windowed fullscreen the default, with define to change the behavior back to normal fullscreen
 // 2026-08-19 - Matthias Panny - Added an additional render texture _stagingTex to draw rgba buffers (draw_pixels_rgba(...)) to the screen
+// 2026-09-21 - Matthias Panny - Added a define to ignore a missing tiles folder. The user has to ensure that no calls that need this folder available are made.
 
 #ifndef MCIGRAPH_H
 #define MCIGRAPH_H
 
 //If the fullscreen behavior (borderless windowed) causes issues, the normal fullscreen mechanism can be enabled by uncommenting the line below
 //#define NORMAL_FULLSCREEN
+
+//If MCIGraph should ignore a missing tiles folder uncomment the line below or add this define in your main file before including mcigraph.hpp
+//#define IGNORE_MISSING_TILES_FOLDER
 
 // Warning: Putting everything in the header file is not good style.
 // This is done here for ease of use for educational purposes only!!
@@ -113,8 +117,13 @@ private:
         SetTargetFPS(60);
         //SetExitKey(KEY_NULL); //uncomment if you want to disable closing the application via the escape key
 
-        if (!_textureCache.SearchAndSetResourceDir("tiles"))
-            throw MciGraphException("Could not find the \"tiles\" folder");
+        if (!_textureCache.SearchAndSetResourceDir("tiles")){
+            #ifdef IGNORE_MISSING_TILES_FOLDER
+                TraceLog(LOG_WARNING, "Could not find the \"tiles\" folder, but IGNORE_MISSING_TILES_FOLDER is defined, so continuing anyway\n Trying to access the folder will crash the game now!");
+            #else
+                throw MciGraphException("Could not find the \"tiles\" folder");
+            #endif
+        }
 
         TraceLog(LOG_INFO, "Using working/resource dir %s", GetWorkingDirectory());
 
