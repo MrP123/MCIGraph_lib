@@ -11,97 +11,116 @@
 // 2025-05-05 - Matthias Panny - Made borderless windowed fullscreen the default, with define to change the behavior back to normal fullscreen
 // 2026-08-19 - Matthias Panny - Added an additional render texture _stagingTex to draw rgba buffers (draw_pixels_rgba(...)) to the screen
 // 2026-09-21 - Matthias Panny - Added a define to ignore a missing tiles folder. The user has to ensure that no calls that need this folder available are made.
+// 2026-09-23 - Matthias Panny - Added a rudimentary plotting API (immediate mode style) to allow plotting of scatter and line plots. The API is not very flexible and only allows for a single plot at a time, but it is enough to demonstrate the concept of plotting.
 
 #ifndef MCIGRAPH_H
 #define MCIGRAPH_H
 
-//If the fullscreen behavior (borderless windowed) causes issues, the normal fullscreen mechanism can be enabled by uncommenting the line below
-//#define NORMAL_FULLSCREEN
+// If the fullscreen behavior (borderless windowed) causes issues, the normal fullscreen mechanism can be enabled by uncommenting the line below
+// #define NORMAL_FULLSCREEN
 
-//If MCIGraph should ignore a missing tiles folder uncomment the line below or add this define in your main file before including mcigraph.hpp
-//#define IGNORE_MISSING_TILES_FOLDER
+// If MCIGraph should ignore a missing tiles folder uncomment the line below or add this define in your main file before including mcigraph.hpp
+// #define IGNORE_MISSING_TILES_FOLDER
 
 // Warning: Putting everything in the header file is not good style.
 // This is done here for ease of use for educational purposes only!!
 
-#include "raylib.h"
+#include <exception>
 #include <iostream>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <exception>
 
-namespace mcigraph{
+#include "raylib.h"
+
+namespace mcigraph {
 
 struct MciGraphException : std::runtime_error {
-    MciGraphException(const std::string& m) : std::runtime_error(m){
+    MciGraphException(const std::string& m) : std::runtime_error(m) {
         std::string msg = "MciGraphException: " + m;
         TraceLog(LOG_ERROR, "%s", msg.c_str());
     };
 };
 
-class TextureCache{
-
+class TextureCache {
 private:
     std::unordered_map<std::string, Texture2D> _cache;
 
 public:
-    Texture2D load(std::string filename){
-        if(_cache.count(filename) == 0){
+    Texture2D load(std::string filename) {
+        if (_cache.count(filename) == 0) {
             Texture2D tex = LoadTexture(filename.c_str());
-            if(tex.id <= 0) throw MciGraphException("The specified image could not be loaded --> verify that the path is correct and the image actually exists!");
+            if (tex.id <= 0) throw MciGraphException("The specified image could not be loaded --> verify that the path is correct and the image actually exists!");
             _cache[filename] = tex;
         }
         return _cache[filename];
     }
 
-    ~TextureCache(){
-        for(auto i : _cache){
+    ~TextureCache() {
+        for (auto i : _cache) {
             UnloadTexture(i.second);
         }
     }
 
-    //modified from: https://github.com/raylib-extras/extras-c
-    bool SearchAndSetResourceDir(const char* folderName){
-
-        //check the working dir
-        if (DirectoryExists(folderName)){
+    // modified from: https://github.com/raylib-extras/extras-c
+    bool SearchAndSetResourceDir(const char* folderName) {
+        // check the working dir
+        if (DirectoryExists(folderName)) {
             ChangeDirectory(TextFormat("%s/%s", GetWorkingDirectory(), folderName));
             return true;
         }
 
         const char* appDir = GetApplicationDirectory();
 
-        //check the application dir
+        // check the application dir
         const char* dir = TextFormat("%s%s", appDir, folderName);
-        if (DirectoryExists(dir)){
+        if (DirectoryExists(dir)) {
             ChangeDirectory(dir);
             return true;
         }
 
-        //check 3 levels up from the application dir, the canonical folder structure when cloning MCIGraph_lib and at 3 levels
+        // check 3 levels up from the application dir, the canonical folder structure when cloning MCIGraph_lib and at 3 levels
         const char* search_paths[] = {"%s../%s", "%s../../%s", "%s../../../%s", "%s/MCIGraph_lib/%s", "%s../MCIGraph_lib/%s", "%s../../MCIGraph_lib/%s", "%s../../../MCIGraph_lib/%s"};
         const int amt_paths = sizeof(search_paths) / sizeof(*search_paths);
 
-        for (int i = 0; i < amt_paths; i++){
+        for (int i = 0; i < amt_paths; i++) {
             dir = TextFormat(search_paths[i], appDir, folderName);
-            if (DirectoryExists(dir)){
+            if (DirectoryExists(dir)) {
                 ChangeDirectory(dir);
                 return true;
             }
         }
         return false;
     }
-
 };
 
-class MciGraph{
+struct PlotData {
+    enum Type {
+        SCATTER,
+        LINE
+    } type;
 
+    double* x;
+    double* y;
+    int length;
+
+    int red, green, blue;
+};
+
+struct PlotContext {
+    int x, y, width, height;
+    double min_x, max_x, min_y, max_y;
+    int padding;
+
+    std::vector<PlotData> plots;
+};
+
+class MciGraph {
 private:
     TextureCache _textureCache;
 
-    //only needed if NORMAL_FULLSCREEN is not defined
-    //if NORMAL_FULLSCREEN is defined, these variables are unused but do not change the behavior or worsen performance
+    // only needed if NORMAL_FULLSCREEN is not defined
+    // if NORMAL_FULLSCREEN is defined, these variables are unused but do not change the behavior or worsen performance
     RenderTexture2D _target;
     int _gameScreenWidth = 1280;
     int _gameScreenHeight = 720;
@@ -111,13 +130,16 @@ private:
     // Texture that can be used to immediately draw a rgba buffer to the screen
     Texture2D _stagingTex = {0};
 
+    // Global plotting context --> cleared on the end of each plot
+    PlotContext _plot = {0};
+
 private:
-    MciGraph(){
+    MciGraph() {
         InitWindow(_gameScreenWidth, _gameScreenHeight, "mcigraph");
         SetTargetFPS(60);
-        //SetExitKey(KEY_NULL); //uncomment if you want to disable closing the application via the escape key
+        // SetExitKey(KEY_NULL); //uncomment if you want to disable closing the application via the escape key
 
-        if (!_textureCache.SearchAndSetResourceDir("tiles")){
+        if (!_textureCache.SearchAndSetResourceDir("tiles")) {
             #ifdef IGNORE_MISSING_TILES_FOLDER
                 TraceLog(LOG_WARNING, "Could not find the \"tiles\" folder, but IGNORE_MISSING_TILES_FOLDER is defined, so continuing anyway\n Trying to access the folder will crash the game now!");
             #else
@@ -135,25 +157,37 @@ private:
         UnloadImage(img);
     }
 
+    // For scaling plotting values
+
+    double scale_value(double v) {
+        // Scale a value v from the original data range to pixel range
+        return (v - _plot.min_x) / (_plot.max_x - _plot.min_x) * (_plot.width - 2 * _plot.padding) + _plot.padding;
+    }
+
+    double scale_value_inverted(double v) {
+        // Scale a value v from the original data range to pixel range, but invert the axis direction --> for plotting y values with up being positive
+        return (1.0 - ((v - _plot.min_y) / (_plot.max_y - _plot.min_y))) * (_plot.height - 2 * _plot.padding) + _plot.padding;
+    }
+
 public:
-    bool running(){
+    bool running() {
         return !WindowShouldClose();
     }
 
-    void clear(){
-        ClearBackground(CLITERAL(Color){ 239, 239, 239, 255 });
+    void clear() {
+        ClearBackground(CLITERAL(Color){239, 239, 239, 255});
     }
 
-    void begin_drawing(){
-
+    void begin_drawing() {
         #ifdef NORMAL_FULLSCREEN
             BeginDrawing();
         #else
-            float wScale = (float)GetScreenWidth()  / _gameScreenWidth;
+
+            float wScale = (float)GetScreenWidth() / _gameScreenWidth;
             float hScale = (float)GetScreenHeight() / _gameScreenHeight;
 
             float new_scale = (wScale < hScale) ? wScale : hScale;
-            if(_scale != new_scale){
+            if (_scale != new_scale) {
                 _scale = new_scale;
                 SetMouseOffset(-(GetScreenWidth() - (_gameScreenWidth*_scale))*0.5f, -(GetScreenHeight() - (_gameScreenHeight*_scale))*0.5f);
                 SetMouseScale(1/_scale, 1/_scale);
@@ -168,57 +202,53 @@ public:
 
             BeginTextureMode(_target);
         #endif
-
         clear();
     }
 
-    void end_drawing(){
-
+    void end_drawing() {
         #ifndef NORMAL_FULLSCREEN
-            //Ends the drawing to the render texture
+            // Ends the drawing to the render texture
             EndTextureMode();
 
-            //and actually draws it
+            // and actually draws it
             BeginDrawing();
-                clear();
-                DrawTexturePro(
-                    _target.texture,
-                    (Rectangle){ 0.0f, 0.0f, (float)_target.texture.width, (float)-_target.texture.height },
-                    (Rectangle){
-                        (GetScreenWidth()  - ((float)_gameScreenWidth  * _scale))*0.5f,
-                        (GetScreenHeight() - ((float)_gameScreenHeight * _scale))*0.5f,
-                        (float)_gameScreenWidth  * _scale,
-                        (float)_gameScreenHeight * _scale
-                    },
-                    (Vector2){ 0, 0 }, 0.0f, WHITE
-                );
+            clear();
+            DrawTexturePro(
+                _target.texture,
+                (Rectangle){0.0f, 0.0f, (float)_target.texture.width, (float)-_target.texture.height},
+                (Rectangle){
+                    (GetScreenWidth() - ((float)_gameScreenWidth * _scale)) * 0.5f,
+                    (GetScreenHeight() - ((float)_gameScreenHeight * _scale)) * 0.5f,
+                    (float)_gameScreenWidth * _scale,
+                    (float)_gameScreenHeight * _scale},
+                (Vector2){0, 0}, 0.0f, WHITE);
         #endif
         EndDrawing();
     }
 
     void draw_rect(int x, int y, int width, int height, bool outline = false, int red = 0x00, int green = 0x00, int blue = 0x00) {
-        if(outline) DrawRectangleLines(x, y, width, height, CLITERAL(Color){ (unsigned char)red, (unsigned char)green, (unsigned char)blue, 255 });
-        else DrawRectangle(x, y, width, height, CLITERAL(Color){ (unsigned char)red, (unsigned char)green, (unsigned char)blue, 255 });
+        if (outline) DrawRectangleLines(x, y, width, height, CLITERAL(Color){(unsigned char)red, (unsigned char)green, (unsigned char)blue, 255});
+        else DrawRectangle(x, y, width, height, CLITERAL(Color){(unsigned char)red, (unsigned char)green, (unsigned char)blue, 255});
     }
 
     void draw_circle(int cx, int cy, int radius, bool outline = false, int red = 0x00, int green = 0x00, int blue = 0x00) {
-        if(outline) DrawCircleLines(cx, cy, radius, CLITERAL(Color){ (unsigned char)red, (unsigned char)green, (unsigned char)blue, 255 });
-        else DrawCircle(cx, cy, radius, CLITERAL(Color){ (unsigned char)red, (unsigned char)green, (unsigned char)blue, 255 });
+        if (outline) DrawCircleLines(cx, cy, radius, CLITERAL(Color){(unsigned char)red, (unsigned char)green, (unsigned char)blue, 255});
+        else DrawCircle(cx, cy, radius, CLITERAL(Color){(unsigned char)red, (unsigned char)green, (unsigned char)blue, 255});
     }
 
     void draw_line(int x1, int y1, int x2, int y2, int red = 0x00, int green = 0x00, int blue = 0x00) {
-        DrawLine(x1, y1, x2, y2, CLITERAL(Color){ (unsigned char)red, (unsigned char)green, (unsigned char)blue, 255 });
+        DrawLine(x1, y1, x2, y2, CLITERAL(Color){(unsigned char)red, (unsigned char)green, (unsigned char)blue, 255});
     }
 
     void draw_point(int x, int y, int red = 0x00, int green = 0x00, int blue = 0x00) {
-        DrawPixel(x, y, CLITERAL(Color){ (unsigned char)red, (unsigned char)green, (unsigned char)blue, 255 });
+        DrawPixel(x, y, CLITERAL(Color){(unsigned char)red, (unsigned char)green, (unsigned char)blue, 255});
     }
 
-    void draw_text(const char* text, int x, int y, int fontSize = 18, int red = 0x00, int green = 0x00, int blue = 0x00){
-        DrawText(text, x, y, fontSize, CLITERAL(Color){ (unsigned char)red, (unsigned char)green, (unsigned char)blue, 255 });
+    void draw_text(const char* text, int x, int y, int fontSize = 18, int red = 0x00, int green = 0x00, int blue = 0x00) {
+        DrawText(text, x, y, fontSize, CLITERAL(Color){(unsigned char)red, (unsigned char)green, (unsigned char)blue, 255});
     }
 
-    void draw_image(std::string filename, int x, int y, float _scale = 1.0f, float rot_deg = 0.0f){
+    void draw_image(std::string filename, int x, int y, float _scale = 1.0f, float rot_deg = 0.0f) {
         Texture2D texture = _textureCache.load(filename);
         DrawTextureEx(texture, CLITERAL(Vector2){(float)x, (float)y}, rot_deg, _scale, WHITE);
     }
@@ -234,40 +264,98 @@ public:
         DrawTexture(_stagingTex, 0, 0, WHITE);
     }
 
-    bool is_pressed(int key){
+    void begin_plot(int x, int y, int width, int height, int padding = 0) {
+        _plot.x = x;
+        _plot.y = y;
+        _plot.width = width;
+        _plot.height = height;
+        _plot.padding = padding;
+    }
+
+    void plot_scatter(double* x, double* y, int length, int red = 0, int green = 0, int blue = 0) {
+        _plot.plots.push_back(CLITERAL(PlotData){PlotData::SCATTER, x, y, length, red, green, blue});
+    }
+
+    void plot_line(double* x, double* y, int length, int red = 0, int green = 0, int blue = 0) {
+        _plot.plots.push_back(CLITERAL(PlotData){PlotData::LINE, x, y, length, red, green, blue});
+    }
+
+    void end_plot() {
+        // calculate min and max values for x and y across all plots
+        for (unsigned int i = 0; i < _plot.plots.size(); i++) {
+            PlotData pd = _plot.plots[i];
+            if (i == 0) {
+                _plot.min_x = pd.x[0], _plot.max_x = pd.x[0];
+                _plot.min_y = pd.y[0], _plot.max_y = pd.y[0];
+            }
+
+            for (int i = 1; i < pd.length; i++) {
+                if (pd.x[i] < _plot.min_x) _plot.min_x = pd.x[i];
+                if (pd.x[i] > _plot.max_x) _plot.max_x = pd.x[i];
+                if (pd.y[i] < _plot.min_y) _plot.min_y = pd.y[i];
+                if (pd.y[i] > _plot.max_y) _plot.max_y = pd.y[i];
+            }
+        }
+
+        for (const PlotData& pd : _plot.plots) {
+            if (pd.type == PlotData::LINE) {
+                for (int i = 1; i < pd.length; i++) {
+                    double x1_scaled = scale_value(pd.x[i - 1]);
+                    double y1_scaled = scale_value_inverted(pd.y[i - 1]);
+
+                    double x2_scaled = scale_value(pd.x[i]);
+                    double y2_scaled = scale_value_inverted(pd.y[i]);
+
+                    draw_line(x1_scaled + _plot.x, y1_scaled + _plot.y, x2_scaled + _plot.x, y2_scaled + _plot.y, pd.red, pd.green, pd.blue);
+                }
+            } else if (pd.type == PlotData::SCATTER) {
+                for (int i = 0; i < pd.length; i++) {
+                    double x_scaled = scale_value(pd.x[i]);
+                    double y_scaled = scale_value_inverted(pd.y[i]);
+
+                    draw_circle(x_scaled + _plot.x, y_scaled + _plot.y, 5, false, pd.red, pd.green, pd.blue);
+                }
+            }
+        }
+
+        _plot.plots.clear();
+        _plot = {0};
+    }
+
+    bool is_pressed(int key) {
         return IsKeyDown(key);
     }
 
-    bool was_pressed(int key){
+    bool was_pressed(int key) {
         return IsKeyPressed(key) || IsKeyPressedRepeat(key);
     }
 
-    double get_delta_time(){
-        return (double) GetFrameTime(); //in seconds
+    double get_delta_time() {
+        return (double)GetFrameTime();  // in seconds
     }
 
-    void set_fps(int fps){
-        if(fps < 1) throw MciGraphException("Target FPS cannot be smaller than 1 fps");
+    void set_fps(int fps) {
+        if (fps < 1) throw MciGraphException("Target FPS cannot be smaller than 1 fps");
         SetTargetFPS(fps);
     }
 
-    void set_fullscreen(){
+    void set_fullscreen() {
         #ifdef NORMAL_FULLSCREEN
-            if(!IsWindowFullscreen()) ToggleFullscreen();
+            if (!IsWindowFullscreen()) ToggleFullscreen();
         #else
-            if(!_isBorderlessFullscreen) toggle_fullscreen();
+            if (!_isBorderlessFullscreen) toggle_fullscreen();
         #endif
     }
 
-    void unset_fullscreen(){
+    void unset_fullscreen() {
         #ifdef NORMAL_FULLSCREEN
-            if(IsWindowFullscreen()) ToggleFullscreen();
+            if (IsWindowFullscreen()) ToggleFullscreen();
         #else
-            if(_isBorderlessFullscreen) toggle_fullscreen();
+            if (_isBorderlessFullscreen) toggle_fullscreen();
         #endif
     }
 
-    void toggle_fullscreen(){
+    void toggle_fullscreen() {
         #ifdef NORMAL_FULLSCREEN
             ToggleFullscreen();
         #else
@@ -276,7 +364,7 @@ public:
         #endif
     }
 
-    bool is_fullscreen(){
+    bool is_fullscreen() {
         #ifdef NORMAL_FULLSCREEN
             return IsWindowFullscreen();
         #else
@@ -284,7 +372,7 @@ public:
         #endif
     }
 
-    int get_screen_width(){
+    int get_screen_width() {
         #ifdef NORMAL_FULLSCREEN
             return GetScreenWidth();
         #else
@@ -292,7 +380,7 @@ public:
         #endif
     }
 
-    int get_screen_height(){
+    int get_screen_height() {
         #ifdef NORMAL_FULLSCREEN
             return GetScreenHeight();
         #else
@@ -300,25 +388,24 @@ public:
         #endif
     }
 
-    ~MciGraph(){
+    ~MciGraph() {
         UnloadRenderTexture(_target);
         if (_stagingTex.id != 0) UnloadTexture(_stagingTex);
         CloseWindow();
     }
 
-    static MciGraph &get_instance() {
+    static MciGraph& get_instance() {
         static MciGraph mcigraph;
         return mcigraph;
     }
 
 private:
-  // Prevent copying and assigning of MciGraph
-  MciGraph(const MciGraph &);
-  MciGraph &operator=(const MciGraph &);
-
+    // Prevent copying and assigning of MciGraph
+    MciGraph(const MciGraph&);
+    MciGraph& operator=(const MciGraph&);
 };
 
-} //namespace mcigraph
+}  // namespace mcigraph
 
 // Some fishy stuff is going on after here. This is only done to
 // make teaching of an introductory course in C++ easier and should not be taken
@@ -329,15 +416,15 @@ private:
 // would lead to compile errors when using this library in more than
 // one file
 
-inline bool running(){
+inline bool running() {
     return mcigraph::MciGraph::get_instance().running();
 }
 
-inline void begin_drawing(){
+inline void begin_drawing() {
     return mcigraph::MciGraph::get_instance().begin_drawing();
 }
 
-inline void end_drawing(){
+inline void end_drawing() {
     return mcigraph::MciGraph::get_instance().end_drawing();
 }
 
@@ -357,15 +444,15 @@ inline void draw_point(int x, int y, int red = 0x00, int green = 0x00, int blue 
     return mcigraph::MciGraph::get_instance().draw_point(x, y, red, green, blue);
 }
 
-inline void draw_text(const char* text, int x, int y, int fontSize = 18, int red = 0x00, int green = 0x00, int blue = 0x00){
+inline void draw_text(const char* text, int x, int y, int fontSize = 18, int red = 0x00, int green = 0x00, int blue = 0x00) {
     return mcigraph::MciGraph::get_instance().draw_text(text, x, y, fontSize, red, green, blue);
 }
 
-inline void draw_text(std::string text, int x, int y, int fontSize = 18, int red = 0x00, int green = 0x00, int blue = 0x00){
+inline void draw_text(std::string text, int x, int y, int fontSize = 18, int red = 0x00, int green = 0x00, int blue = 0x00) {
     return mcigraph::MciGraph::get_instance().draw_text(text.c_str(), x, y, fontSize, red, green, blue);
 }
 
-inline void draw_image(std::string filename, int x, int y, float scale = 1.0f, float rot_deg = 0.0f){
+inline void draw_image(std::string filename, int x, int y, float scale = 1.0f, float rot_deg = 0.0f) {
     return mcigraph::MciGraph::get_instance().draw_image(filename, x, y, scale, rot_deg);
 }
 
@@ -373,47 +460,63 @@ inline void draw_pixels_rgba(const unsigned char* rgba, int width, int height) {
     return mcigraph::MciGraph::get_instance().draw_pixels_rgba(rgba, width, height);
 }
 
-inline bool is_pressed(int key){
+inline void begin_plot(int x, int y, int width, int height, int padding = 0) {
+    return mcigraph::MciGraph::get_instance().begin_plot(x, y, width, height, padding);
+}
+
+inline void plot_scatter(double* x, double* y, int length, int red = 0, int green = 0, int blue = 0) {
+    return mcigraph::MciGraph::get_instance().plot_scatter(x, y, length, red, green, blue);
+}
+
+inline void plot_line(double* x, double* y, int length, int red = 0, int green = 0, int blue = 0) {
+    return mcigraph::MciGraph::get_instance().plot_line(x, y, length, red, green, blue);
+}
+
+inline void end_plot() {
+    return mcigraph::MciGraph::get_instance().end_plot();
+}
+
+inline bool is_pressed(int key) {
     return mcigraph::MciGraph::get_instance().is_pressed(key);
 }
 
-inline bool was_pressed(int key){
+inline bool was_pressed(int key) {
     return mcigraph::MciGraph::get_instance().was_pressed(key);
 }
 
-inline double get_delta_time(){
+inline double get_delta_time() {
     return mcigraph::MciGraph::get_instance().get_delta_time();
 }
 
-inline void set_fps(int fps){
+inline void set_fps(int fps) {
     return mcigraph::MciGraph::get_instance().set_fps(fps);
 }
 
-inline void set_fullscreen(){
+inline void set_fullscreen() {
     return mcigraph::MciGraph::get_instance().set_fullscreen();
 }
 
-inline void unset_fullscreen(){
+inline void unset_fullscreen() {
     return mcigraph::MciGraph::get_instance().unset_fullscreen();
 }
 
-inline void toggle_fullscreen(){
+inline void toggle_fullscreen() {
     return mcigraph::MciGraph::get_instance().toggle_fullscreen();
 }
 
-inline bool is_fullscreen(){
+inline bool is_fullscreen() {
     return mcigraph::MciGraph::get_instance().is_fullscreen();
 }
 
-inline int get_screen_width(){
+inline int get_screen_width() {
     return mcigraph::MciGraph::get_instance().get_screen_width();
 }
 
-inline int get_screen_height(){
+inline int get_screen_height() {
     return mcigraph::MciGraph::get_instance().get_screen_height();
 }
 
-//https://github.com/raysan5/raylib/blob/77eeb0010e957a2468deea3ac9f7c74fd3674202/src/raylib.h#L568
+// https://github.com/raysan5/raylib/blob/77eeb0010e957a2468deea3ac9f7c74fd3674202/src/raylib.h#L568
 const auto KEY_0 = KEY_ZERO;
 const auto KEY_1 = KEY_ONE;
 const auto KEY_2 = KEY_TWO;
@@ -425,4 +528,4 @@ const auto KEY_7 = KEY_SEVEN;
 const auto KEY_8 = KEY_EIGHT;
 const auto KEY_9 = KEY_NINE;
 
-#endif // MCIGRAPH_H
+#endif  // MCIGRAPH_H
