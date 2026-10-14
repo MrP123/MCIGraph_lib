@@ -12,6 +12,7 @@
 // 2026-08-19 - Matthias Panny - Added an additional render texture _stagingTex to draw rgba buffers (draw_pixels_rgba(...)) to the screen
 // 2026-09-21 - Matthias Panny - Added a define to ignore a missing tiles folder. The user has to ensure that no calls that need this folder available are made.
 // 2026-09-23 - Matthias Panny - Added a rudimentary plotting API (immediate mode style) to allow plotting of scatter and line plots. The API is not very flexible and only allows for a single plot at a time, but it is enough to demonstrate the concept of plotting.
+// 2026-10-14 - Matthias Panny - Modified the plotting system to not store raw pointers to the data, but instead copy the data into the plot context. This ensures one hast to be less careful with the lifetime of the data at the cost of some performance.
 
 #ifndef MCIGRAPH_H
 #define MCIGRAPH_H
@@ -30,6 +31,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <utility> // for std::move in plotting functions
 
 #include "raylib.h"
 
@@ -100,9 +102,8 @@ struct PlotData {
         LINE
     } type;
 
-    double* x;
-    double* y;
-    int length;
+    std::vector<double> x;
+    std::vector<double> y;
 
     int red, green, blue;
 };
@@ -264,32 +265,56 @@ public:
         DrawTexture(_stagingTex, 0, 0, WHITE);
     }
 
-    void begin_plot(int x, int y, int width, int height, int padding = 0) {
+    void begin_plot(int x, int y, int width, int height, int padding = 0, int red = 239, int green = 239, int blue = 239) {
         _plot.x = x;
         _plot.y = y;
         _plot.width = width;
         _plot.height = height;
         _plot.padding = padding;
+
+        // If colors are different from default background, then draw a background rectangle for the plot area
+        if (!(red == 239 && green == 239 && blue == 239)) {
+            draw_rect(x + padding, y + padding, width - 2 * padding, height - 2 * padding, false, red, green, blue);
+        }
     }
 
     void plot_scatter(double* x, double* y, int length, int red = 0, int green = 0, int blue = 0) {
-        _plot.plots.push_back(CLITERAL(PlotData){PlotData::SCATTER, x, y, length, red, green, blue});
+        PlotData p;
+        p.type = PlotData::SCATTER;
+        p.red = red;
+        p.green = green;
+        p.blue = blue;
+
+        p.x.assign(x, x + length);
+        p.y.assign(y, y + length);
+
+        _plot.plots.push_back(std::move(p)); //prevent further copying of the vectors
     }
 
     void plot_line(double* x, double* y, int length, int red = 0, int green = 0, int blue = 0) {
-        _plot.plots.push_back(CLITERAL(PlotData){PlotData::LINE, x, y, length, red, green, blue});
+        PlotData p;
+        p.type = PlotData::LINE;
+        p.red = red;
+        p.green = green;
+        p.blue = blue;
+
+        p.x.assign(x, x + length);
+        p.y.assign(y, y + length);
+
+        _plot.plots.push_back(std::move(p)); //prevent further copying of the vectors
     }
 
     void end_plot() {
         // calculate min and max values for x and y across all plots
         for (unsigned int i = 0; i < _plot.plots.size(); i++) {
-            PlotData pd = _plot.plots[i];
+            const PlotData& pd = _plot.plots[i];
             if (i == 0) {
                 _plot.min_x = pd.x[0], _plot.max_x = pd.x[0];
                 _plot.min_y = pd.y[0], _plot.max_y = pd.y[0];
             }
 
-            for (int i = 1; i < pd.length; i++) {
+            int num_points = pd.x.size(); // musst be the same as pd.y.size() but we don't check this here
+            for (int i = 1; i < num_points; i++) {
                 if (pd.x[i] < _plot.min_x) _plot.min_x = pd.x[i];
                 if (pd.x[i] > _plot.max_x) _plot.max_x = pd.x[i];
                 if (pd.y[i] < _plot.min_y) _plot.min_y = pd.y[i];
@@ -298,8 +323,9 @@ public:
         }
 
         for (const PlotData& pd : _plot.plots) {
+            int num_points = pd.x.size(); // musst be the same as pd.y.size() but we don't check this here
             if (pd.type == PlotData::LINE) {
-                for (int i = 1; i < pd.length; i++) {
+                for (int i = 1; i < num_points; i++) {
                     double x1_scaled = scale_value(pd.x[i - 1]);
                     double y1_scaled = scale_value_inverted(pd.y[i - 1]);
 
@@ -309,7 +335,7 @@ public:
                     draw_line(x1_scaled + _plot.x, y1_scaled + _plot.y, x2_scaled + _plot.x, y2_scaled + _plot.y, pd.red, pd.green, pd.blue);
                 }
             } else if (pd.type == PlotData::SCATTER) {
-                for (int i = 0; i < pd.length; i++) {
+                for (int i = 0; i < num_points; i++) {
                     double x_scaled = scale_value(pd.x[i]);
                     double y_scaled = scale_value_inverted(pd.y[i]);
 
@@ -460,8 +486,8 @@ inline void draw_pixels_rgba(const unsigned char* rgba, int width, int height) {
     return mcigraph::MciGraph::get_instance().draw_pixels_rgba(rgba, width, height);
 }
 
-inline void begin_plot(int x, int y, int width, int height, int padding = 0) {
-    return mcigraph::MciGraph::get_instance().begin_plot(x, y, width, height, padding);
+inline void begin_plot(int x, int y, int width, int height, int padding = 0, int red = 239, int green = 239, int blue = 239) {
+    return mcigraph::MciGraph::get_instance().begin_plot(x, y, width, height, padding, red, green, blue);
 }
 
 inline void plot_scatter(double* x, double* y, int length, int red = 0, int green = 0, int blue = 0) {
